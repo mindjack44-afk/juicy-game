@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ジューシー判定</title>
+<style>
+body{margin:0;background:#1b0f0a;color:#fff;font:18px/1.5 sans-serif;text-align:center;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}
+h1{font-size:30px;margin:0 0 8px;color:#ffb347}
+#word{font-size:44px;font-weight:800;min-height:66px;margin:16px 0}
+#hud{display:flex;gap:18px;justify-content:center;font-size:17px}
+#msg{min-height:30px;font-size:20px}
+#bar{width:280px;height:10px;background:#3a2318;border-radius:5px;overflow:hidden;margin:10px auto}
+#fill{height:100%;width:0;background:#ff7a2f}
+button{font-size:20px;padding:14px 22px;border:0;border-radius:12px;margin:6px;font-weight:700}
+#start{background:#ff7a2f;color:#fff}
+.j{background:#e8364f;color:#fff}.n{background:#6b7280;color:#fff}
+#heard{font-size:14px;opacity:.6;min-height:20px}
+label{font-size:14px;opacity:.8}
+</style></head><body>
+<h1>ジューシー or ノージューシー</h1>
+<div id="hud"><span>スコア <b id="sc">0</b></span><span>ライフ <b id="lf">❤❤❤</b></span><span>Lv <b id="lv">1</b></span></div>
+<div id="word">🍖</div>
+<div id="bar"><div id="fill"></div></div>
+<div id="msg">マイクに向かって答えてね</div>
+<div id="heard"></div>
+<button id="start">スタート</button>
+<div><button class="j" data-a="j">ジューシー</button><button class="n" data-a="n">ノージューシー</button></div>
+<label><input type="checkbox" id="show" checked> お題を文字でも表示</label>
+<script>
+{
+const J=['梨','焼肉','ブドウ','ハンバーグ','りんご','まん汁','サンマ','ホルモン'];
+const N=['バナナ','栗','じゃがいも','珍棒','カロリーメイト','かぼちゃ','イヌ','魚'];
+const $=id=>document.getElementById(id);
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let ac,score=0,life=3,cur=null,timer=null,rec=null,playing=false,last='';
+function tone(seq,type){ac=ac||new AudioContext();let t=ac.currentTime;for(const[f,d]of seq){const o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.value=f;g.gain.setValueAtTime(.3,t);g.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g).connect(ac.destination);o.start(t);o.stop(t+d);t+=d*.6}}
+const pinpon=()=>tone([[988,.35],[784,.6]],'sine');
+const boo=()=>tone([[140,.8]],'sawtooth');
+const lvl=()=>Math.floor(score/3);
+function speak(w){return new Promise(r=>{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(w);u.lang='ja-JP';u.rate=Math.min(1+lvl()*.15,2.2);u.onend=r;u.onerror=r;speechSynthesis.speak(u);setTimeout(r,3000)})}
+function hud(){$('sc').textContent=score;$('lf').textContent='❤'.repeat(life)||'-';$('lv').textContent=lvl()+1}
+async function next(){
+  if(!playing)return;
+  let w;do{const isJ=Math.random()<.5;w={t:(isJ?J:N)[Math.random()*8|0],a:isJ?'j':'n'}}while(w.t===last);last=w.t;
+  cur=null;$('word').textContent=$('show').checked?w.t:'？';$('msg').textContent='';$('heard').textContent='';
+  await speak(w.t);if(!playing)return;
+  cur=w;const lim=Math.max(4000-lvl()*300,1500),t0=Date.now();
+  listen();
+  clearInterval(timer);timer=setInterval(()=>{const p=1-(Date.now()-t0)/lim;$('fill').style.width=Math.max(p,0)*100+'%';if(p<=0)judge(null)},50);
+}
+function listen(){
+  if(!SR)return;try{rec&&rec.abort()}catch(e){}
+  rec=new SR();rec.lang='ja-JP';rec.interimResults=true;rec.maxAlternatives=3;
+  rec.onresult=e=>{let txt='';for(const r of e.results)for(const a of r)txt+=a.transcript+' ';$('heard').textContent='聞こえた: '+txt;
+    const s=txt.toLowerCase();
+    if(/ノー|のー|^no|\sno|nojuicy|no juicy|脳|能/.test(s))judge('n');
+    else if(e.results[e.results.length-1].isFinal&&/ジューシ|じゅーし|juicy|ジュース|充実/.test(s))judge('j');};
+  rec.onerror=()=>{};try{rec.start()}catch(e){}
+}
+function judge(a){
+  if(!cur)return;const w=cur;cur=null;clearInterval(timer);try{rec&&rec.abort()}catch(e){}
+  if(a===w.a){score++;pinpon();$('msg').textContent='⭕ ピンポーン！'}
+  else{life--;boo();$('msg').textContent=(a?'❌ ブー！':'⌛ 時間切れ！')+' '+w.t+'は'+(w.a==='j'?'ジューシー':'ノージューシー')}
+  $('word').textContent=w.t;hud();
+  if(life<=0){playing=false;$('msg').textContent+=' ／ ゲームオーバー スコア'+score;$('start').style.display='';$('start').textContent='もう一回';speak('ゲームオーバー');return}
+  setTimeout(next,900);
+}
+$('start').onclick=()=>{ac=ac||new AudioContext();ac.resume();score=0;life=3;hud();playing=true;$('start').style.display='none';
+  if(!SR)$('heard').textContent='このブラウザは音声認識非対応。下のボタンで答えてね';next()};
+document.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>judge(b.dataset.a));
+}
+</script></body></html>
